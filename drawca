@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*- vim:fenc=utf-8:ft=python:et:sw=4:ts=4:sts=4:foldmethod=marker
+"""3-neighbour (elementary) cellular automata visualizer.
+
+Uses pygame for drawing, developed with version 1.9.2 (hg, not released yet).
+"""
+__author__ = "Esa Määttä"
+__copyright__ = "Copyright 2013, Esa Määttä"
+__credits__ = ["Esa Määttä"]
+__license__ = "GPL"
+__version__ = "0.0.1"
+__maintainer__ = "Esa Määttä"
+__email__ = "esa.maatta@iki.fi"
+__status__ = "Aplha"
+
+import pygame
+import sys
+import random
+import logging
+
+from pygame.locals import *
+
+
+# Colors
+BLACK = (0,0,0)
+WHITE = (255,255,255)
+
+def gen_random_pixels(num=10):
+    return bin(random.getrandbits(num))[2:].zfill(num)
+
+def draw_line_and_map(target, pixel_str, line=0):
+    draw_line(target, map_to_color(pixel_str), line)
+
+def map_to_color(pixel_str):
+    return list(map((lambda x: WHITE if x == '0' else BLACK), pixel_str))
+
+def draw_line(target, content, line=0):
+    pixObj = pygame.PixelArray(target)
+    pixObj = pixObj.transpose()
+    pixObj[line] = content
+    del pixObj
+
+def next_line_gen(init_line, rule_num=54):
+    """Next line generator.
+
+    Args:
+        init_line:    str. String of "0" and "1".
+        rule_num: int. Initial CA rule as int.
+    """
+    def slice3(i):
+        """Return wrap-around 3-neighborhood of a string index i."""
+        return last_line[(i-1) % len(last_line)] + \
+                last_line[i] + \
+                last_line[(i+1) % len(last_line)]
+    def gen_rule(num):
+        """Generates 3-neighbour rules for given rule id (int number)."""
+        rule_str = bin(num)[2:].zfill(8)
+        rule_lambda = rule_str.count("1")/8
+        log.info("rule {} lamda is {}.".format(num, rule_lambda))
+        return {
+                "000": rule_str[7],
+                "001": rule_str[6],
+                "010": rule_str[5],
+                "011": rule_str[4],
+                "100": rule_str[3],
+                "101": rule_str[2],
+                "110": rule_str[1],
+                "111": rule_str[0],
+                }
+
+    assert(0 <= rule_num <= 255)
+    log = logging.getLogger(__name__)
+
+    # Generate rule from rule number
+    rule = gen_rule(rule_num)
+    last_line = init_line
+    while True:
+        # New line from previous one
+        last_line = [ rule[slice3(i)] for i,_ in enumerate(last_line) ]
+        rule_num = (yield last_line)
+        # If new rule sent
+        if rule_num != None and 0 <= rule_num <= 255:
+            pygame.display.set_caption("CA rule {}".format(rule_num))
+            log.info("New rule set: {}".format(rule_num))
+            # If all 0 (white) or 1 (blac) line then regenerate new at random
+            zero_count = last_line.count("0")
+            if zero_count == 0 or zero_count == len(last_line):
+                log.info("New line generated at random")
+                last_line = gen_random_pixels(len(last_line))
+            rule = gen_rule(rule_num)
+
+
+def draw_ca(rule, x_size, y_size):
+    """Draws cellurar automata with given rule (Wolfram Code).
+
+    Args:
+        rule: int. 8-bit integer meaning it's in range [0-255] signifying
+        Wolfram Code of the first CA to be drawn.
+    """
+    log = logging.getLogger(__name__)
+
+    pygame.init()
+
+    # Window
+    disp_size = (x_size, y_size)
+    DISPLAYSURF = pygame.display.set_mode(disp_size, 0, 32)
+
+    pygame.display.set_caption("CA rule {}".format(rule))
+
+    # Set bg color
+    DISPLAYSURF.fill(WHITE)
+
+    # Modify surface as pixel array
+    initial_line_pix = gen_random_pixels(disp_size[0])
+    draw_line_and_map(DISPLAYSURF, initial_line_pix, 0)
+
+    # Draw loop
+    fps_clock = pygame.time.Clock()
+    fps = 60
+    i = 1
+    log.info("Initial rule is number {}.".format(rule))
+    line_gen = next_line_gen(initial_line_pix, rule)
+    while True:
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit()
+                sys.exit()
+        pygame.display.update()
+        fps_clock.tick(fps)
+        if i < disp_size[1]:
+            draw_line_and_map(DISPLAYSURF, next(line_gen), i)
+            i += 1
+        else:
+            rule = (rule + 1) % 256
+            line_gen.send(rule)
+            i = 0
+    return
+
+# Command line processing {{{
+#
+
+def process_cmd_line(inputs=sys.argv[1:], parent_parsers=list(), namespace=None):
+    """
+    Processes command line arguments.
+
+    Returns a namespace with all arguments.
+
+    Parameters:
+
+    - `inputs`: list. List of arguments to be parsed.
+    - `parent_parsers`: list. List of parent parsers which are used as base.
+    - `namespace`: namespace. Namespace where parsed options are added. Can be
+      an existing class for example.
+    """
+    import argparse
+    class Verbose_action(argparse.Action):
+        """Argparse action: Cumulative verbose switch '-v' counter"""
+        def __call__(self, parser, namespace, values, option_string=None):
+            """Values can be None, "v", "vv", "vvv" or [0-9]+
+            """
+            if values is None:
+                verbosity_level = 1
+            elif values.isdigit():
+                verbosity_level = int(values)
+            else: # [v]+
+                v_count = values.count('v')
+                if v_count != len(values):
+                    raise argparse.ArgumentError(self, "Invalid parameter given for verbose: '{}'".format(values))
+                verbosity_level = v_count+1
+
+            # Append to previous verbosity level, this allows multiple "-v"
+            # switches to be cumulatively counted.
+            verbosity_level += getattr(namespace, self.dest)
+            setattr(namespace, self.dest, verbosity_level)
+    class Quiet_action(argparse.Action):
+        """Argparse action: Cumulative quiet switch '-q' counter"""
+        def __call__(self, parser, namespace, values, option_string=None):
+            """qalues can be None, "q", "qq", "qqq" or [0-9]+
+            """
+            if values is None:
+                verbosity_level = 1
+            elif values.isdigit():
+                verbosity_level = int(values)
+            else: # [q]+
+                q_count = values.count('q')
+                if q_count != len(values):
+                    raise argparse.ArgumentError(self, "Invalid parameter given for quiet: '{}'".format(values))
+                verbosity_level = q_count+1
+
+            # Append to previous verbosity level, this allows multiple "-q"
+            # switches to be cumulatively counted.
+            verbosity_level = getattr(namespace, self.dest) - verbosity_level
+            setattr(namespace, self.dest, verbosity_level)
+
+    # initialize the parser object:
+    parser = argparse.ArgumentParser(
+            parents = parent_parsers,
+            formatter_class = argparse.ArgumentDefaultsHelpFormatter,
+            description = "3-neighbour (elementary) cellular automata visualizer.")
+
+    parser.add_argument(
+        '-x',
+        default=500,
+        type=int,
+        dest='x_size',
+        help="Horizontal size for the draw window.")
+
+    parser.add_argument(
+        '-y',
+        default=500,
+        type=int,
+        dest='y_size',
+        help="Vertical size for the draw window.")
+
+    parser.add_argument(
+        '-v',
+        nargs='?',
+        default=0,
+        action=Verbose_action,
+        dest='verbose',
+        help="Verbosity level specifier.")
+
+    parser.add_argument(
+        '-q',
+        nargs='?',
+        action=Quiet_action,
+        dest='verbose',
+        help="Be more quiet, negatively affects verbosity level.")
+
+    parser.add_argument(
+        'rule',
+        metavar='RULE',
+        nargs='?',
+        type=int,
+        default=110,
+        #nargs=1, # If defined then a list is produced
+        help='CA rule to draw first (8-bit Wolfram Code as int).')
+
+    return parser.parse_args(inputs)
+
+
+def main():
+    """
+    Main entry to the program when used from command line. Registers default
+    signals and processes command line arguments from sys.argv.
+    """
+    import signal
+    import wor.utils
+
+    def term_sig_handler(signum, frame):
+        """Handles terminating signal."""
+        print()
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, term_sig_handler) # for ctrl+c
+
+    args = process_cmd_line()
+
+    # Init module level logger with given verbosity level
+    lformat = '%(levelname)s:%(funcName)s:%(lineno)s: %(message)s'
+    logging.basicConfig(level=wor.utils.convert_int_to_logging_level(args.verbose), format=lformat)
+
+    del args.verbose
+
+    draw_ca(**args.__dict__)
+
+    return 0
+
+
+if __name__ == '__main__':
+    status = main()
+    sys.exit(status)
+
+# }}}
