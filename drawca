@@ -36,7 +36,8 @@ def map_to_color(pixel_str):
 
 def draw_line(target, content, line=0):
     pixObj = pygame.PixelArray(target)
-    pixObj = pixObj.transpose()
+    if hasattr(pixObj, "transpose"):
+        pixObj = pixObj.transpose()
     pixObj[line] = content
     del pixObj
 
