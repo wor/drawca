@@ -8,6 +8,7 @@ High Priority
     * Rule [DONE]
     * RunGUI [TODO]
 * Fix magic numbers.
+* Add proper build scripts, at the moment just an eclipse compatible project.
 
 Low Priority
 ------------
