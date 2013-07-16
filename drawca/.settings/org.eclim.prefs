@@ -1,0 +1,4 @@
+eclipse.preferences.version=1
+org.eclim.java.import.exclude=["^com.sun..*","^sunw?..*"]
+org.eclim.user.email=esa.maatta@iki.fi
+org.eclim.user.name="Esa M\u00E4\u00E4tt\u00E4"
